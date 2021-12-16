@@ -110,7 +110,7 @@ public class RdbAdapter implements OuterAdapter {
                 mirrorDbConfigCache.put(key, MirrorDbConfig.create(configName, mappingConfig));
             }
         }
-
+        System.err.println(rdbMapping);
         // 初始化连接池
         Map<String, String> properties = configuration.getProperties();
         dataSource = new DruidDataSource();

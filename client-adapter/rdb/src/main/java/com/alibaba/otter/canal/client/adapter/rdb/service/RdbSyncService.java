@@ -3,11 +3,8 @@ package com.alibaba.otter.canal.client.adapter.rdb.service;
 import java.sql.Connection;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
+import java.text.SimpleDateFormat;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -17,7 +14,10 @@ import java.util.function.Function;
 
 import javax.sql.DataSource;
 
+import com.alibaba.otter.canal.connector.core.util.DateUtil;
+import com.google.protobuf.StringValue;
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang.time.DateUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,6 +38,7 @@ import com.alibaba.otter.canal.client.adapter.support.Util;
  * @version 1.0.0
  */
 public class RdbSyncService {
+   static SimpleDateFormat sdf =new SimpleDateFormat("yyyy-MM-dd HH mm ss.SSS");
 
     private static final Logger               logger  = LoggerFactory.getLogger(RdbSyncService.class);
 
@@ -125,7 +126,6 @@ public class RdbSyncService {
                         }
                     }));
                 }
-
                 futures.forEach(future -> {
                     try {
                         future.get();
@@ -211,11 +211,11 @@ public class RdbSyncService {
             try {
                 String type = dml.getType();
                 if (type != null && type.equalsIgnoreCase("INSERT")) {
-                    insert(batchExecutor, config, dml);
+                    insert(batchExecutor, config, dml,1);
                 } else if (type != null && type.equalsIgnoreCase("UPDATE")) {
-                    update(batchExecutor, config, dml);
+                    insert(batchExecutor, config, dml,1);
                 } else if (type != null && type.equalsIgnoreCase("DELETE")) {
-                    delete(batchExecutor, config, dml);
+                    insert(batchExecutor, config, dml,-1);
                 } else if (type != null && type.equalsIgnoreCase("TRUNCATE")) {
                     truncate(batchExecutor, config);
                 }
@@ -234,16 +234,19 @@ public class RdbSyncService {
      * @param config 配置项
      * @param dml DML数据
      */
-    private void insert(BatchExecutor batchExecutor, MappingConfig config, SingleDml dml) throws SQLException {
+    private void insert(BatchExecutor batchExecutor, MappingConfig config, SingleDml dml,int sign) throws SQLException {
         Map<String, Object> data = dml.getData();
         if (data == null || data.isEmpty()) {
             return;
         }
 
         DbMapping dbMapping = config.getDbMapping();
+        data.put("version", sdf.format(new Date()));
 
+        data.put("sign",sign);
         Map<String, String> columnsMap = SyncUtil.getColumnsMap(dbMapping, data);
-
+        columnsMap.put("version","version");
+        columnsMap.put("sign","sign");
         StringBuilder insertSql = new StringBuilder();
         insertSql.append("INSERT INTO ").append(SyncUtil.getDbTableName(dbMapping)).append(" (");
 
@@ -319,7 +322,8 @@ public class RdbSyncService {
         Map<String, Integer> ctype = getTargetColumnType(batchExecutor.getConn(), config);
 
         StringBuilder updateSql = new StringBuilder();
-        updateSql.append("UPDATE ").append(SyncUtil.getDbTableName(dbMapping)).append(" SET ");
+        // updateSql.append("UPDATE ").append(SyncUtil.getDbTableName(dbMapping)).append(" SET ");
+        updateSql.append("ALTER TABLE ").append(SyncUtil.getDbTableName(dbMapping)).append(" UPDATE ");
         List<Map<String, ?>> values = new ArrayList<>();
         boolean hasMatched = false;
         for (String srcColumnName : old.keySet()) {
@@ -373,7 +377,8 @@ public class RdbSyncService {
         Map<String, Integer> ctype = getTargetColumnType(batchExecutor.getConn(), config);
 
         StringBuilder sql = new StringBuilder();
-        sql.append("DELETE FROM ").append(SyncUtil.getDbTableName(dbMapping)).append(" WHERE ");
+//        sql.append("DELETE FROM ").append(SyncUtil.getDbTableName(dbMapping)).append(" WHERE ");
+        sql.append("ALTER TABLE").append(SyncUtil.getDbTableName(dbMapping)).append(" DELETE WHERE ");
 
         List<Map<String, ?>> values = new ArrayList<>();
         // 拼接主键
